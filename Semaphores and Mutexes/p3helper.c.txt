@@ -1,0 +1,220 @@
+/* p3helper.c
+   Megan Chua cssc0025
+   Program 3 assignment
+   CS570 Carroll
+   SDSU
+   Fall 2019
+   Due Date: 11/1/2019
+   References: Semex.c from Carroll's workbook
+
+   This is the ONLY file you are allowed to change. (In fact, the other
+   files should be symbolic links to
+     ~cs570/Three/p3main.c
+     ~cs570/Three/p3robot.c
+     ~cs570/Three/p3.h
+     ~cs570/Three/makefile
+     ~cs570/Three/CHK.h    )
+   */
+#include "p3.h"
+#include <math.h>
+
+/* You may put declarations/definitions here.
+   In particular, you will probably want access to information
+   about the job (for details see the assignment and the documentation
+   in p3robot.c):
+     */
+extern int nrRobots;
+extern int quota;
+extern int seed;
+sem_t *pmutx;
+char semaphoreMutx[SEMNAMESIZE];
+
+int fd; //opens file
+int fd2;
+int count; //keeps track of printing new lines
+int row;
+
+
+
+/* General documentation for the following functions is in p3.h
+   Here you supply the code, and internal documentation:
+   */
+void initStudentStuff(void)
+{
+    //int fd;
+    //int fd2;
+    count = 0;
+    row = 1;
+    
+    sprintf(semaphoreMutx, "%s%ldmutx", COURSEID, (long)getuid()); //create unique name for semaphore
+
+    //initialize the semaphore and if it already exists, then open the existing
+    if(SEM_FAILED == (pmutx = sem_open(semaphoreMutx, O_CREAT|O_RDWR|O_EXCL,S_IRUSR|S_IWUSR,1)))
+    {
+        CHK(SEM_FAILED != (pmutx = sem_open(semaphoreMutx,O_RDWR)));
+	//CHK(fd = open("countfile",O_RDWR));
+	//CHK(fd2 = open("rowfile",O_RDWR));
+    }
+    
+    CHK(sem_wait(pmutx)); //request to enter the critical region
+    
+    /* begin critical section */
+    CHK(fd = open("countfile", O_RDWR|O_CREAT,S_IRUSR|S_IWUSR));
+    CHK(fd2 = open("rowfile", O_RDWR|O_CREAT,S_IRUSR|S_IWUSR));
+    
+    if(lseek(fd,0,SEEK_END) == 0)
+    {
+         CHK(lseek(fd,0,SEEK_SET));
+	 assert(sizeof(count) == write(fd,&count,sizeof(count))); 
+    }
+    
+    if(lseek(fd2,0,SEEK_END) == 0)
+    {
+        CHK(lseek(fd2,0,SEEK_SET));
+	assert(sizeof(row) == write(fd2,&row,sizeof(row)));
+    }
+	
+    CHK(sem_post(pmutx));
+
+     
+    
+    /* end of critical region */
+
+
+}
+
+/* In this braindamaged version of placeWidget, the widget builders don't
+   coordinate at all, and merely print a random pattern. You should replace
+   this code with something that fully follows the p3 specification. */
+void placeWidget(int n)
+{
+    
+    //printf("mid: %d",middleRow);
+    //int fd;
+    //int fd2;
+    
+    
+    CHK(sem_wait(pmutx));
+    int itemSize = nrRobots*quota;
+    int middleRow = (int) (ceil(sqrt(itemSize)));
+    
+    int sum = 0;
+    int i;
+    
+    for (i = 1; i <= middleRow; i++)
+    {
+    	sum = sum + i;
+    }
+
+    /* begin critical region for manipulating the file and printing */
+    //CHK(fd = open("countfile", O_RDWR|O_CREAT,S_IRUSR|S_IWUSR));
+    CHK(lseek(fd,0,SEEK_SET));
+    assert(sizeof(count) == read(fd, &count, sizeof(count)));
+    
+    //CHK(fd2 = open("rowfile", O_RDWR|O_CREAT,S_IRUSR|S_IWUSR));
+    CHK(lseek(fd2,0,SEEK_SET));
+    assert(sizeof(row) == read(fd2,&row,sizeof(row)));
+    count++;
+
+    int temp = count;
+    int temp2 = row;
+    
+    //printf("count: %d\n",count);
+    //printf("row: %d\n",row);
+    
+
+    if (count == itemSize)
+    {
+        printeger(n);
+        printf("F\n");
+        fflush(stdout);
+        CHK(close(fd));
+        CHK(unlink("countfile"));
+        CHK(close(fd2));
+        CHK(unlink("rowfile"));
+        CHK(sem_close(pmutx));
+        CHK(sem_unlink(semaphoreMutx));
+    }
+
+    else
+    {
+        if (row > middleRow)
+        {
+            int j;
+	    int i = row - middleRow;
+	    row = row - (2*i);
+	    for (j = middleRow-1; j >= row; j--)
+	    {
+	    	sum = sum + j;
+	    }
+	    
+            /*for (j = 1; j < row; j++)
+            {
+                count = count - j;
+            }*/
+
+	    
+            
+
+            if (count == sum)
+            {
+                printeger(n);
+                printf("N\n");
+                fflush(stdout);
+                row = temp2;
+                row++;   
+            }   
+
+            else
+            {   
+                row = temp2;
+                printeger(n);
+                fflush(stdout);
+            }
+            
+        }
+    
+        else
+        { 
+	    
+            int i;
+            for (i = 1; i < row; i++)
+            {
+                count = count - i;
+            }
+
+            if (count == row)
+            {
+                printeger(n);
+                printf("N\n");
+                fflush(stdout);
+                row++;
+            }
+
+            else
+            {
+                printeger(n);
+                fflush(stdout);
+            }
+	    
+    
+       	}
+	
+	count = temp;
+    	CHK(lseek(fd,0,SEEK_SET));
+   	assert(sizeof(count) == write(fd, &count, sizeof(count)));
+    	CHK(lseek(fd2,0,SEEK_SET));
+    	assert(sizeof(row) == write(fd2, &row, sizeof(row)));
+    	CHK(sem_post(pmutx));
+
+    }
+    
+    
+
+    
+
+}
+
+/* If you feel the need to create any additional functions, please
+   write them below here, with appropriate documentation:
+   */
